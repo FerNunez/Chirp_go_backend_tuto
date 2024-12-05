@@ -2,4 +2,18 @@
 - FileServer returns a handler that serves HTTP requests with the contents of the file system rooted at root.
 - A fileserver is a kind of simple web server that serves static files from the host machine
 - http.Dir to convert a filepath (in our case a dot: . which indicates the current directory) to a director
+- When using a standard fileserver, the path to a file on disk is the same as its URL path. An exception is that index.html is served from / instead of /index.html.
+
+- /index.html will be served from /
+- /pages/index.html will be served from /pages
+- /pages/about/index.html will be served from /pages/about
+
+- As there is the relatuib between Request path and the static item, you can also stripPrefix of a Request path:
+  - Example: This command: 	
+        serverMux.Handle("/app/", http.StripPrefix("/app/", http.FileServer(http.Dir(".")))) -> means that connecting to http path: 
+          http://localhost:8080/app it will file server the file in the '/' (as app prefix was removed)
+
+
+
+- how to create my own, handler: anny function that receives a  'func(http.ResponseWriter, *http.Request)'
 
