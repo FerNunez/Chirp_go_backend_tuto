@@ -1,0 +1,5 @@
+// My notes:
+- FileServer returns a handler that serves HTTP requests with the contents of the file system rooted at root.
+- A fileserver is a kind of simple web server that serves static files from the host machine
+- http.Dir to convert a filepath (in our case a dot: . which indicates the current directory) to a director
+
