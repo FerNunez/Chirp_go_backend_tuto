@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -89,7 +89,7 @@ func ValidateChirp(w http.ResponseWriter, r *http.Request) {
 		Error string `json:"error"`
 	}
 	type OkResp struct {
-		Valid bool `json:"valid"`
+		CleanedBody string `json:"cleaned_body"`
 	}
 
 	// Decode received Json into Chirp
@@ -107,7 +107,7 @@ func ValidateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// chrip is too long => respond with
-	if len(chirp.Body) > 2 {
+	if len(chirp.Body) > 140 {
 		errorResp := ErrorResp{Error: "Chrip is too long"}
 		// Idk if I should ignore this err
 		dat, _ := json.Marshal(errorResp)
@@ -118,10 +118,37 @@ func ValidateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ok chirp
-	okResp := OkResp{Valid: true}
+	okResp := OkResp{CleanedBody: ReplaceBadWords(chirp.Body)}
 	dat, _ := json.Marshal(okResp)
 	// Idk if I should ignore the error from marshalin
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write([]byte(dat))
+}
+
+var badWords = []string{"kerfuffle", "sharbert", "fornax"}
+
+func ReplaceBadWords(s string) string {
+	string_array := strings.Split(s, " ")
+
+	for index, w := range string_array {
+		lowerCased := strings.ToLower(w)
+		for _, badWord := range badWords {
+
+			// Lower
+			if lowerCased == badWord {
+				string_array[index] = "****"
+				break
+			}
+		}
+	}
+	return strings.Join(string_array, " ")
+
+	//// Using replaceAll but it is not lower cased
+	//sNew := strings.Clone(s)
+	//for _, badWord := range []string{"kerfuffle", "sharbert", "fornax"} {
+	//	sNew = strings.ReplaceAll(sNew, badWord, "****")
+	//}
+	//return sNew
+
 }
