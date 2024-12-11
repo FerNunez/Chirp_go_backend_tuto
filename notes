@@ -16,4 +16,4 @@
 
 
 - how to create my own, handler: anny function that receives a  'func(http.ResponseWriter, *http.Request)'
-
+- The atomic.Int32 type is a really cool standard-library type that allows us to safely increment and read an integer value across multiple goroutines (HTTP requests).
