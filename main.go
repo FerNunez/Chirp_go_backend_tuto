@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sync/atomic"
 )
@@ -21,6 +23,7 @@ func main() {
 	serverMux.HandleFunc("GET /api/healthz", ReadinessHandler)
 	serverMux.HandleFunc("GET /admin/metrics", apiCfg.NumberOfRequests)
 	serverMux.HandleFunc("POST /admin/reset", apiCfg.ResetNumberOfRequests)
+	serverMux.HandleFunc("POST /api/validate_chirp", ValidateChirp)
 
 	// launch server
 	err := server.ListenAndServe()
@@ -75,4 +78,50 @@ func (cfg *apiConfig) ResetNumberOfRequests(w http.ResponseWriter, r *http.Reque
 	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK) // I did 200 instead of http.StatusOk
 	fmt.Fprintf(w, "Reset done: %v", cfg.fileserverHits.Load())
+}
+
+func ValidateChirp(w http.ResponseWriter, r *http.Request) {
+
+	type Chirp struct {
+		Body string `json:"body"`
+	}
+	type ErrorResp struct {
+		Error string `json:"error"`
+	}
+	type OkResp struct {
+		Valid bool `json:"valid"`
+	}
+
+	// Decode received Json into Chirp
+	chirp := Chirp{}
+	err := json.NewDecoder(r.Body).Decode(&chirp)
+	// If Error decoding chirp
+	// Important to check that the body is empty cause could be an "error" when decoding json
+	if err != nil || chirp.Body == "" {
+		// Idk if I should ignore this err
+		dat, _ := json.Marshal(ErrorResp{Error: "Something went wrong"})
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(500)
+		w.Write([]byte(dat))
+		return
+	}
+
+	// chrip is too long => respond with
+	if len(chirp.Body) > 2 {
+		errorResp := ErrorResp{Error: "Chrip is too long"}
+		// Idk if I should ignore this err
+		dat, _ := json.Marshal(errorResp)
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(500)
+		w.Write([]byte(dat))
+		return
+	}
+
+	// Ok chirp
+	okResp := OkResp{Valid: true}
+	dat, _ := json.Marshal(okResp)
+	// Idk if I should ignore the error from marshalin
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write([]byte(dat))
 }
