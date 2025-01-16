@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -33,6 +34,7 @@ func main() {
 	serverMux.HandleFunc("GET /admin/metrics", cfg.metricsDisplayHandler)
 	serverMux.HandleFunc("GET /api/healthz", readinnesHandler)
 	serverMux.HandleFunc("POST /admin/reset", cfg.metricsResetHandler)
+	serverMux.HandleFunc("POST /api/validate_chirp", validateChirps)
 
 	// Listen & Serve
 	server := &http.Server{
@@ -67,5 +69,50 @@ func (cfg *apiConfig) metricsResetHandler(rw http.ResponseWriter, _ *http.Reques
 
 	cfg.fileserverHits.Store(0)
 	rw.Write([]byte("Counter Reseted"))
+
+}
+
+func validateChirps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
+
+	// Receice & Decode
+	type Chirp struct {
+		Body string `json:"body"`
+	}
+
+	type ChirpError struct {
+		ErrResponse string `json:"error"`
+	}
+
+	type ValidResponse struct {
+		Content string `json:"valid"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	var chirp Chirp
+	err := decoder.Decode(&chirp)
+	if err != nil {
+		fmt.Println("Error decoding chirp", err)
+		errResp := ChirpError{"Something went wrong"}
+		dat, _ := json.Marshal(errResp)
+		w.Write(dat)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Encode & Send
+	if len(chirp.Body) > 10 {
+		fmt.Println("Error decoding chirp", err)
+		errResp := ChirpError{"Chirp is too long"}
+		dat, _ := json.Marshal(errResp)
+		w.Write(dat)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	validResp := ValidResponse{"true"}
+	dat, _ := json.Marshal(validResp)
+	w.Write(dat)
+	w.WriteHeader(http.StatusOK)
 
 }
