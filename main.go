@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -115,4 +116,20 @@ func validateChirps(w http.ResponseWriter, r *http.Request) {
 	w.Write(dat)
 	w.WriteHeader(http.StatusOK)
 
+}
+
+var bannedWords = []string{"kerfuffle", "sharbert", "fornax"}
+
+func cleanProfane(input string) string {
+	output := []string{}
+
+	for _, word := range strings.Fields(input) {
+		for _, banned := range bannedWords {
+			if banned == strings.ToLower(word) {
+				word = "****"
+			}
+		}
+		output = append(output, word)
+	}
+	return strings.Join(output, " ")
 }
