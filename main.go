@@ -2,8 +2,8 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"sync/atomic"
 )
 
@@ -30,9 +30,9 @@ func main() {
 	serverMux := http.NewServeMux()
 	serverMux.Handle("/", http.StripPrefix("/app/", cfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
 	serverMux.Handle("assets/logo.png", http.FileServer(http.Dir("assets/logo.png")))
-	serverMux.HandleFunc("GET /healthz", readinnesHandler)
-	serverMux.HandleFunc("GET /metrics", cfg.metricsDisplayHandler)
-	serverMux.HandleFunc("POST /reset", cfg.metricsResetHandler)
+	serverMux.HandleFunc("GET /admin/metrics", cfg.metricsDisplayHandler)
+	serverMux.HandleFunc("GET /api/healthz", readinnesHandler)
+	serverMux.HandleFunc("POST /admin/reset", cfg.metricsResetHandler)
 
 	// Listen & Serve
 	server := &http.Server{
@@ -50,12 +50,15 @@ func readinnesHandler(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) metricsDisplayHandler(rw http.ResponseWriter, _ *http.Request) {
-	rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
+	rw.Header().Add("Content-Type", "text/html")
 	rw.WriteHeader(200)
-
 	x := int(cfg.fileserverHits.Load())
-	rw.Write([]byte(strconv.Itoa(x)))
-
+	fmt.Fprintf(rw, `<html>
+											<body>
+												<h1>Welcome, Chirpy Admin</h1>
+												<p>Chirpy has been visited %d times!</p>
+											</body>
+										</html>`, x)
 }
 
 func (cfg *apiConfig) metricsResetHandler(rw http.ResponseWriter, _ *http.Request) {
