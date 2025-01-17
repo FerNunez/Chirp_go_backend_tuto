@@ -17,6 +17,8 @@ import (
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
+	platform       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -33,12 +35,18 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func main() {
-  godotenv.Load()
+	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fmt.Println("error")
+	}
 	dbQueries := database.New(db)
 
 	cfg := apiConfig{}
+	cfg.db = dbQueries
+	cfg.platform = os.Getenv("PLATFORM")
+
 	serverMux := http.NewServeMux()
 	serverMux.Handle("/", http.StripPrefix("/app/", cfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
 	serverMux.Handle("assets/logo.png", http.FileServer(http.Dir("assets/logo.png")))
@@ -46,6 +54,7 @@ func main() {
 	serverMux.HandleFunc("GET /api/healthz", readinnesHandler)
 	serverMux.HandleFunc("POST /admin/reset", cfg.metricsResetHandler)
 	serverMux.HandleFunc("POST /api/validate_chirp", validateChirps)
+	serverMux.HandleFunc("POST /api/user", cfg.createUser)
 
 	// Listen & Serve
 	server := &http.Server{
@@ -54,6 +63,42 @@ func main() {
 	}
 	server.ListenAndServe()
 
+}
+
+func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
+
+	type emailRequest struct {
+		Email string `json:"email"`
+	}
+
+	type CreatedResponse struct {
+		Id        string `json:"id"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+		Email     string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+
+	var emailReq emailRequest
+	err := decoder.Decode(&emailReq)
+	if err != nil {
+		fmt.Println("Error email request decoding")
+		w.Header().Add("Content-Type", "text/plain;charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	user, err := cfg.db.CreateUser(r.Context(), emailReq.Email)
+	createdRespo := CreatedResponse{Id: user.ID.String(), CreatedAt: user.CreatedAt.String(), UpdatedAt: user.UpdatedAt.String(), Email: user.Email}
+	dat, err := json.Marshal(createdRespo)
+	if err != nil {
+		fmt.Println("Error creating response")
+		w.Header().Add("Content-Type", "text/plain;charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(201)
+	w.Write(dat)
 }
 
 func readinnesHandler(rw http.ResponseWriter, r *http.Request) {
@@ -75,11 +120,23 @@ func (cfg *apiConfig) metricsDisplayHandler(rw http.ResponseWriter, _ *http.Requ
 }
 
 func (cfg *apiConfig) metricsResetHandler(rw http.ResponseWriter, _ *http.Request) {
+	if cfg.platform != "dev" {
+		rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
+		rw.WriteHeader(403)
+	}
+
 	rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
 	rw.WriteHeader(200)
 
 	cfg.fileserverHits.Store(0)
-	rw.Write([]byte("Counter Reseted"))
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fmt.Println("error")
+	}
+	dbQueries := database.New(db)
+	cfg.db =  dbQueries
+	rw.Write([]byte("Counter and DB Reseted "))
 
 }
 
