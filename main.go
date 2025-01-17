@@ -2,11 +2,17 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/FerNunez/tuto_go_server/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
@@ -27,6 +33,10 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func main() {
+  godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	dbQueries := database.New(db)
 
 	cfg := apiConfig{}
 	serverMux := http.NewServeMux()
@@ -86,7 +96,7 @@ func validateChirps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ValidResponse struct {
-		Content string `json:"valid"`
+		CleanBody string `json:"cleaned_body"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -96,8 +106,8 @@ func validateChirps(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Error decoding chirp", err)
 		errResp := ChirpError{"Something went wrong"}
 		dat, _ := json.Marshal(errResp)
-		w.Write(dat)
 		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(dat)
 		return
 	}
 
@@ -106,15 +116,15 @@ func validateChirps(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Error decoding chirp", err)
 		errResp := ChirpError{"Chirp is too long"}
 		dat, _ := json.Marshal(errResp)
-		w.Write(dat)
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write(dat)
 		return
 	}
 
-	validResp := ValidResponse{"true"}
+	validResp := ValidResponse{cleanProfane(chirp.Body)}
 	dat, _ := json.Marshal(validResp)
-	w.Write(dat)
 	w.WriteHeader(http.StatusOK)
+	w.Write(dat)
 
 }
 
