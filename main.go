@@ -9,8 +9,10 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/FerNunez/tuto_go_server/internal/database"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -53,8 +55,8 @@ func main() {
 	serverMux.HandleFunc("GET /admin/metrics", cfg.metricsDisplayHandler)
 	serverMux.HandleFunc("GET /api/healthz", readinnesHandler)
 	serverMux.HandleFunc("POST /admin/reset", cfg.metricsResetHandler)
-	serverMux.HandleFunc("POST /api/validate_chirp", validateChirps)
 	serverMux.HandleFunc("POST /api/user", cfg.createUser)
+	serverMux.HandleFunc("POST /api/chirps", cfg.createChirp)
 
 	// Listen & Serve
 	server := &http.Server{
@@ -72,10 +74,10 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type CreatedResponse struct {
-		Id        string `json:"id"`
-		CreatedAt string `json:"created_at"`
-		UpdatedAt string `json:"updated_at"`
-		Email     string `json:"email"`
+		Id        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -88,12 +90,17 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	user, err := cfg.db.CreateUser(r.Context(), emailReq.Email)
-	createdRespo := CreatedResponse{Id: user.ID.String(), CreatedAt: user.CreatedAt.String(), UpdatedAt: user.UpdatedAt.String(), Email: user.Email}
+	user, errCreate := cfg.db.CreateUser(r.Context(), emailReq.Email)
+	fmt.Println("Trying to add", emailReq.Email)
+	if errCreate != nil {
+		fmt.Println("Error creating response", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	createdRespo := CreatedResponse{Id: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
 	dat, err := json.Marshal(createdRespo)
 	if err != nil {
 		fmt.Println("Error creating response")
-		w.Header().Add("Content-Type", "text/plain;charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 	w.Header().Add("Content-Type", "application/json")
@@ -134,30 +141,34 @@ func (cfg *apiConfig) metricsResetHandler(rw http.ResponseWriter, _ *http.Reques
 	if err != nil {
 		fmt.Println("error")
 	}
-	dbQueries := database.New(db)
-	cfg.db =  dbQueries
+	cfg.db = database.New(db)
 	rw.Write([]byte("Counter and DB Reseted "))
 
 }
 
-func validateChirps(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 
 	// Receice & Decode
-	type Chirp struct {
-		Body string `json:"body"`
+	type ChirpReq struct {
+		Body   string    `json:"body"`
+		UserId uuid.UUID `json:"user_id"`
 	}
 
 	type ChirpError struct {
 		ErrResponse string `json:"error"`
 	}
 
-	type ValidResponse struct {
-		CleanBody string `json:"cleaned_body"`
+	type ChirpResponse struct {
+		Id        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserId    uuid.UUID `json:"user_id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
-	var chirp Chirp
+	var chirp ChirpReq
 	err := decoder.Decode(&chirp)
 	if err != nil {
 		fmt.Println("Error decoding chirp", err)
@@ -178,8 +189,15 @@ func validateChirps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validResp := ValidResponse{cleanProfane(chirp.Body)}
-	dat, _ := json.Marshal(validResp)
+	chirpArgs := database.CreateChirpParams{Body: chirp.Body, UserID: chirp.UserId}
+	chirpy, err1 := cfg.db.CreateChirp(r.Context(), chirpArgs)
+	if err1 != nil {
+		fmt.Println("Error saving in DB err: ", err1)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	chirpyResp := ChirpResponse{Id: chirpy.ID, CreatedAt: chirpy.CreatedAt, UpdatedAt: chirpy.UpdatedAt, Body: chirpy.Body, UserId: chirpy.UserID}
+	dat, _ := json.Marshal(chirpyResp)
 	w.WriteHeader(http.StatusOK)
 	w.Write(dat)
 
