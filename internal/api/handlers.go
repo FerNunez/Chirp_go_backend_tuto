@@ -154,4 +154,28 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	w.Write(dat)
 
 }
+func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	type ChirpResponse struct {
+		Id        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserId    uuid.UUID `json:"user_id"`
+	}
 
+	// Todo: Understand why this needs a DB?
+	chirps, err := cfg.Db.GetChirps(r.Context())
+	if err != nil {
+		fmt.Println("Error retrieving all chirps from DB: ", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	chirpsResponse := make([]ChirpResponse, len(chirps))
+	for idx, chirpSql := range chirps {
+		chirpsResponse[idx] = ChirpResponse{Id: chirpSql.ID, CreatedAt: chirpSql.CreatedAt, UpdatedAt: chirpSql.UpdatedAt, Body: chirpSql.Body, UserId: chirpSql.UserID}
+	}
+	dat, _ := json.Marshal(chirpsResponse)
+	w.WriteHeader(http.StatusOK)
+	w.Write(dat)
+}

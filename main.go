@@ -32,6 +32,7 @@ func main() {
 	serverMux.HandleFunc("POST /admin/reset", cfg.MetricsResetHandler)
 	serverMux.HandleFunc("POST /api/user", cfg.CreateUser)
 	serverMux.HandleFunc("POST /api/chirps", cfg.CreateChirp)
+	serverMux.HandleFunc("GET /api/chirps", cfg.GetChirpsHandler)
 
 	// Listen & Serve
 	server := &http.Server{
