@@ -34,6 +34,7 @@ func main() {
 	serverMux.HandleFunc("POST /api/chirps", cfg.CreateChirp)
 	serverMux.HandleFunc("GET /api/chirps", cfg.GetChirpsHandler)
 	serverMux.HandleFunc("GET /api/chirps/{id}", cfg.GetChirpsByIDHandler)
+	serverMux.HandleFunc("POST /api/login", cfg.Login)
 
 	// Listen & Serve
 	server := &http.Server{

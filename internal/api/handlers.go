@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/FerNunez/tuto_go_server/internal/auth"
 	"github.com/FerNunez/tuto_go_server/internal/database"
 	"github.com/google/uuid"
 )
@@ -22,8 +23,9 @@ type ApiConfig struct {
 
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 
-	type emailRequest struct {
-		Email string `json:"email"`
+	type UserRequest struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	type CreatedResponse struct {
@@ -35,19 +37,31 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
 
-	var emailReq emailRequest
-	err := decoder.Decode(&emailReq)
+	var userReq UserRequest
+	err := decoder.Decode(&userReq)
 	if err != nil {
-		fmt.Println("Error email request decoding")
+		errmsg := fmt.Sprintf("Could not decode incoming user data; %v", err)
+		fmt.Println(errmsg)
 		w.Header().Add("Content-Type", "text/plain;charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
 	}
 
-	user, errCreate := cfg.Db.CreateUser(r.Context(), emailReq.Email)
-	fmt.Println("Trying to add", emailReq.Email)
-	if errCreate != nil {
-		fmt.Println("Error creating response", err)
+	hashedPass, err := auth.HashPassword(userReq.Password)
+	if err != nil {
+		errmsg := fmt.Sprintf("Could not hash user password %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	createUserParams := database.CreateUserParams{Email: userReq.Email, HashedPassword: hashedPass}
+	user, errCreate := cfg.Db.CreateUser(r.Context(), createUserParams)
+	if errCreate != nil {
+		errmsg := fmt.Sprintf("Error creating response %v", errCreate)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
 		return
 	}
 	createdRespo := CreatedResponse{Id: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
@@ -213,6 +227,57 @@ func (cfg *ApiConfig) GetChirpsByIDHandler(w http.ResponseWriter, r *http.Reques
 	chirpResponse := ChirpResponse{Id: chirpSql.ID, CreatedAt: chirpSql.CreatedAt, UpdatedAt: chirpSql.UpdatedAt, Body: chirpSql.Body, UserId: chirpSql.UserID}
 
 	dat, _ := json.Marshal(chirpResponse)
+	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(dat)
+}
+
+func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
+
+	type LoginReq struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	type LoginResp struct {
+		Id        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+
+	// Unmarshal or Decode
+	decoder := json.NewDecoder(r.Body)
+	var loginReq LoginReq
+	err := decoder.Decode(&loginReq)
+	if err != nil {
+		errmsg := fmt.Sprintf("Could not decode incoming login request. Err: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	dbUser, err := cfg.Db.GetUserByEmail(r.Context(), loginReq.Email)
+	if err != nil {
+		errmsg := fmt.Sprintf("Could not retrieve user. Err: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	if err := auth.CheckPasswordHash(loginReq.Password, dbUser.HashedPassword); err != nil {
+		errmsg := fmt.Sprintln("Wrong password")
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email}
+	dat, _ := json.Marshal(loginResp)
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(dat))
 }
