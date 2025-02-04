@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	//"strings"
 	"sync/atomic"
 	"time"
 
@@ -176,6 +177,42 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		chirpsResponse[idx] = ChirpResponse{Id: chirpSql.ID, CreatedAt: chirpSql.CreatedAt, UpdatedAt: chirpSql.UpdatedAt, Body: chirpSql.Body, UserId: chirpSql.UserID}
 	}
 	dat, _ := json.Marshal(chirpsResponse)
+	w.WriteHeader(http.StatusOK)
+	w.Write(dat)
+}
+
+func (cfg *ApiConfig) GetChirpsByIDHandler(w http.ResponseWriter, r *http.Request) {
+
+	type ChirpResponse struct {
+		Id        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserId    uuid.UUID `json:"user_id"`
+	}
+
+	idStr := r.PathValue("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		errmsg := fmt.Sprintf("Could not convert {id} key into chirp UUID type. Err: %v", err)
+		w.Header().Add("Content-Type", "text/plain;charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	chirpSql, err := cfg.Db.GetChirpsByID(r.Context(), []uuid.UUID{id})
+	if err != nil {
+		errmsg := fmt.Sprintf("Chirp not found. Err: %v", err)
+		println(errmsg)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	chirpResponse := ChirpResponse{Id: chirpSql.ID, CreatedAt: chirpSql.CreatedAt, UpdatedAt: chirpSql.UpdatedAt, Body: chirpSql.Body, UserId: chirpSql.UserID}
+
+	dat, _ := json.Marshal(chirpResponse)
 	w.WriteHeader(http.StatusOK)
 	w.Write(dat)
 }

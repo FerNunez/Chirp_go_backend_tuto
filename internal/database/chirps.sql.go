@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const createChirp = `-- name: CreateChirp :one
@@ -73,4 +74,22 @@ func (q *Queries) GetChirps(ctx context.Context) ([]Chirp, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const getChirpsByID = `-- name: GetChirpsByID :one
+SELECT id, created_at, updated_at, body, user_id FROM chirps
+WHERE id = ANY($1::UUID[])
+`
+
+func (q *Queries) GetChirpsByID(ctx context.Context, dollar_1 []uuid.UUID) (Chirp, error) {
+	row := q.db.QueryRowContext(ctx, getChirpsByID, pq.Array(dollar_1))
+	var i Chirp
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Body,
+		&i.UserID,
+	)
+	return i, err
 }
