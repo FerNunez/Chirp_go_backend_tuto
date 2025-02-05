@@ -19,6 +19,7 @@ type ApiConfig struct {
 	FileserverHits atomic.Int32
 	Db             *database.Queries
 	Platform       string
+	SignString     string
 }
 
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -134,9 +135,19 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		UserId    uuid.UUID `json:"user_id"`
 	}
 
+	// Get Header Authentification
+	authToken, errAuth := auth.GetBearerToken(r.Header)
+	if errAuth != nil {
+		errmsg := fmt.Sprintf("could not get header authorization: %v", errAuth)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Decode input
 	decoder := json.NewDecoder(r.Body)
-	var chirp ChirpReq
-	err := decoder.Decode(&chirp)
+	var chirpReq ChirpReq
+	err := decoder.Decode(&chirpReq)
 	if err != nil {
 		fmt.Println("Error decoding chirp", err)
 		errResp := ChirpError{"Something went wrong"}
@@ -147,8 +158,8 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Encode & Send
-	if len(chirp.Body) > 10 {
-		fmt.Println("Error decoding chirp", err)
+	if len(chirpReq.Body) > 100 {
+		fmt.Println("Chirp length overpassed", err)
 		errResp := ChirpError{"Chirp is too long"}
 		dat, _ := json.Marshal(errResp)
 		w.WriteHeader(http.StatusBadRequest)
@@ -156,7 +167,17 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chirpArgs := database.CreateChirpParams{Body: chirp.Body, UserID: chirp.UserId}
+	// Validate user by Authentification Token
+	validatedUserId, err := auth.ValidateJWT(authToken, cfg.SignString)
+	if err != nil || validatedUserId != chirpReq.UserId {
+		errmsg := fmt.Sprintf("user not authenticated: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	chirpArgs := database.CreateChirpParams{Body: chirpReq.Body, UserID: chirpReq.UserId}
 	chirpy, err1 := cfg.Db.CreateChirp(r.Context(), chirpArgs)
 	if err1 != nil {
 		fmt.Println("Error saving in DB err: ", err1)
@@ -235,8 +256,9 @@ func (cfg *ApiConfig) GetChirpsByIDHandler(w http.ResponseWriter, r *http.Reques
 func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 
 	type LoginReq struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds *int   `json:"expires_in_seconds"`
 	}
 
 	type LoginResp struct {
@@ -244,6 +266,7 @@ func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 		Email     string    `json:"email"`
+		Token     string    `json:"token"`
 	}
 
 	// Unmarshal or Decode
@@ -258,6 +281,7 @@ func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get user in DB
 	dbUser, err := cfg.Db.GetUserByEmail(r.Context(), loginReq.Email)
 	if err != nil {
 		errmsg := fmt.Sprintf("Could not retrieve user. Err: %v", err)
@@ -267,6 +291,7 @@ func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check Password
 	if err := auth.CheckPasswordHash(loginReq.Password, dbUser.HashedPassword); err != nil {
 		errmsg := fmt.Sprintln("Wrong password")
 		fmt.Println(errmsg)
@@ -275,7 +300,25 @@ func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email}
+	// Select Expiration time
+	var expirationInSeconds int
+	if loginReq.ExpiresInSeconds == nil {
+		expirationInSeconds = 3600 // 1hour
+	} else {
+		expirationInSeconds = *loginReq.ExpiresInSeconds
+	}
+
+	jwtToken, err := auth.MakeJWT(dbUser.ID, cfg.SignString, time.Duration(expirationInSeconds)*time.Second)
+	if err != nil {
+		errmsg := fmt.Sprintf("Could not make token . Err: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Response
+	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email, Token: jwtToken}
 	dat, _ := json.Marshal(loginResp)
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

@@ -61,7 +61,7 @@ func TestGetBearerToken(t *testing.T) {
 		return
 	}
 
-	if token != expectedToken{
+	if token != expectedToken {
 		t.Fatalf("Expected: %v and gotten token: %v are different", expectedToken, token)
 	}
 }
