@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -42,5 +44,24 @@ func TestJWT(t *testing.T) {
 	if tokenUserID != userID {
 		t.Fatalf("Wrong matching of userIDs")
 		return
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+
+	expectedToken := "WhatEver_dude"
+
+	header := http.Header{}
+	expectedString := fmt.Sprintf("Bearer %v", expectedToken)
+	header.Set("Authorization", expectedString)
+
+	token, err := GetBearerToken(header)
+	if err != nil {
+		t.Fatalf("Error while getting bearer token: %v", err)
+		return
+	}
+
+	if token != expectedToken{
+		t.Fatalf("Expected: %v and gotten token: %v are different", expectedToken, token)
 	}
 }
