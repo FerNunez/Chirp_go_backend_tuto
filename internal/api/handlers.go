@@ -29,10 +29,11 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type CreatedResponse struct {
-		Id        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
+		Id          uuid.UUID `json:"id"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
+		Email       string    `json:"email"`
+		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -64,7 +65,7 @@ func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(errmsg))
 		return
 	}
-	createdRespo := CreatedResponse{Id: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+	createdRespo := CreatedResponse{Id: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, IsChirpyRed: false}
 	dat, err := json.Marshal(createdRespo)
 	if err != nil {
 		fmt.Println("Error creating response")
@@ -325,6 +326,7 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Email        string    `json:"email"`
 		Token        string    `json:"token"`
 		RefreshToken string    `json:"refresh_token"`
+		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}
 
 	// Unmarshal or Decode
@@ -380,7 +382,7 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.Db.CreateRefreshToken(r.Context(), createRefreshTokenParams)
 
 	// Response
-	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email, Token: jwtToken, RefreshToken: refreshToken}
+	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email, Token: jwtToken, RefreshToken: refreshToken, IsChirpyRed: dbUser.IsChirpyRed}
 	dat, _ := json.Marshal(loginResp)
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -576,5 +578,56 @@ func (cfg *ApiConfig) UpdateUserHandler(w http.ResponseWriter, r *http.Request) 
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(dat))
+
+}
+
+func (cfg *ApiConfig) UpdateChirpyRedHandler(w http.ResponseWriter, r *http.Request) {
+
+	// decode body
+	type PolkaWebhookReq struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserId string `json:"user_id"`
+		} `json:"data"`
+	}
+	var polkaWebhookReq PolkaWebhookReq
+	err := json.NewDecoder(r.Body).Decode(&polkaWebhookReq)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not decode body: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// check data
+	if polkaWebhookReq.Event != "user.upgraded" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	userIdUUID, err := uuid.Parse(polkaWebhookReq.Data.UserId)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not parse string to uuid: %v", userIdUUID)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Update DB
+	updateChirpyRedByIDParams := database.UpdateChirpyRedByIDParams{
+		IsChirpyRed: true,
+		ID:          userIdUUID,
+	}
+	errUpdate := cfg.Db.UpdateChirpyRedByID(r.Context(), updateChirpyRedByIDParams)
+	if errUpdate != nil {
+		errmsg := fmt.Sprintf("could update chirpy red in database: %v", userIdUUID)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 
 }

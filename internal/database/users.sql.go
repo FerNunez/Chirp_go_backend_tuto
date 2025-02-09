@@ -12,15 +12,16 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, created_at, updated_at, email, hashed_password)
+INSERT INTO users (id, created_at, updated_at, email, hashed_password, is_chirpy_red)
 VALUES (
   gen_random_uuid(),
   NOW(),
   NOW(),
   $1,
-  $2
+  $2,
+  FALSE
 )
-RETURNING id, created_at, updated_at, email, hashed_password
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
 `
 
 type CreateUserParams struct {
@@ -37,12 +38,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -54,6 +56,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -64,6 +67,22 @@ TRUNCATE TABLE users RESTART IDENTITY CASCADE
 
 func (q *Queries) ResetUsers(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, resetUsers)
+	return err
+}
+
+const updateChirpyRedByID = `-- name: UpdateChirpyRedByID :exec
+UPDATE users
+SET is_chirpy_red = $1
+WHERE id = $2
+`
+
+type UpdateChirpyRedByIDParams struct {
+	IsChirpyRed bool
+	ID          uuid.UUID
+}
+
+func (q *Queries) UpdateChirpyRedByID(ctx context.Context, arg UpdateChirpyRedByIDParams) error {
+	_, err := q.db.ExecContext(ctx, updateChirpyRedByID, arg.IsChirpyRed, arg.ID)
 	return err
 }
 

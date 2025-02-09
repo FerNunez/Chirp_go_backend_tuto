@@ -39,7 +39,7 @@ func main() {
 	serverMux.HandleFunc("POST /api/login", cfg.LoginHandler)
 	serverMux.HandleFunc("POST /api/refresh", cfg.RefreshHandler)
 	serverMux.HandleFunc("POST /api/revoke", cfg.RevokeHandler)
-
+	serverMux.HandleFunc("POST /api/polka/webhooks", cfg.UpdateChirpyRedHandler)
 
 	// Listen & Serve
 	server := &http.Server{
