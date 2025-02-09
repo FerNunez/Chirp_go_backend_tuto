@@ -16,3 +16,7 @@ ORDER BY created_at ASC;
 -- name: GetChirpsByID :one
 SELECT * FROM chirps
 WHERE id = ANY($1::UUID[]);
+
+-- name: DeleteChirpByID :exec
+DELETE FROM chirps
+WHERE id = $1;

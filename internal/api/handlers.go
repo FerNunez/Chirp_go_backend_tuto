@@ -213,6 +213,67 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(dat)
 }
 
+func (cfg *ApiConfig) DeleteChirpByIDHandler(w http.ResponseWriter, r *http.Request) {
+
+	chirpId, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		errmsg := fmt.Sprintf("could not retrieve chirp id: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Validate access token
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not retrieve access token: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+	userId, err := auth.ValidateJWT(accessToken, cfg.SignString)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not validate access token: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	dbChirp, err := cfg.Db.GetChirpsByID(r.Context(), []uuid.UUID{chirpId})
+	if err != nil {
+		errmsg := fmt.Sprintf("could not find chirp in database: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Authorization
+	if dbChirp.UserID != userId {
+		errmsg := fmt.Sprintln("could not validate userId from chirp and request")
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	errDelete := cfg.Db.DeleteChirpByID(r.Context(), dbChirp.ID)
+	if errDelete != nil {
+
+		errmsg := fmt.Sprintf("could not delete chirp by ID: %v", errDelete)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+}
+
 func (cfg *ApiConfig) GetChirpsByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	type ChirpResponse struct {
