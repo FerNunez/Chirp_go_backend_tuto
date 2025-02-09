@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	//"strings"
 	"sync/atomic"
 	"time"
@@ -94,7 +93,7 @@ func (cfg *ApiConfig) MetricsDisplayHandler(rw http.ResponseWriter, _ *http.Requ
 										</html>`, x)
 }
 
-func (cfg *ApiConfig) ResetHandler(rw http.ResponseWriter, _ *http.Request) {
+func (cfg *ApiConfig) ResetHandler(rw http.ResponseWriter, r *http.Request) {
 	if cfg.Platform != "dev" {
 		rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
 		rw.WriteHeader(403)
@@ -102,12 +101,10 @@ func (cfg *ApiConfig) ResetHandler(rw http.ResponseWriter, _ *http.Request) {
 	}
 
 	cfg.FileserverHits.Store(0)
-	dbURL := os.Getenv("DB_URL")
-	db, err := sql.Open("postgres", dbURL)
-	if err != nil {
-		fmt.Println("error")
-	}
-	cfg.Db = database.New(db)
+
+	// Reset db
+	cfg.Db.ResetUsers(r.Context())
+
 	rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
 	rw.WriteHeader(200)
 	rw.Write([]byte("Counter and DB Reseted "))
@@ -433,5 +430,90 @@ func (cfg *ApiConfig) RevokeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+
+}
+
+func (cfg *ApiConfig) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
+
+	type UpdateUserReq struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	// Decode body
+	var updateUserReq UpdateUserReq
+	errDecode := json.NewDecoder(r.Body).Decode(&updateUserReq)
+	if errDecode != nil {
+		errmsg := fmt.Sprintf("could not decode request body: %v", errDecode)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Validate access toke
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not retrieve access token: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+	userID, err := auth.ValidateJWT(accessToken, cfg.SignString)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not validate token: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Hash Password
+	hashedPassword, err := auth.HashPassword(updateUserReq.Password)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not hash password: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Update Pass
+	updateUserLoginByIDParams := database.UpdateUserLoginByIDParams{
+		Email:          updateUserReq.Email,
+		HashedPassword: hashedPassword,
+		ID:             userID,
+	}
+	errUpdate := cfg.Db.UpdateUserLoginByID(r.Context(), updateUserLoginByIDParams)
+	if errUpdate != nil {
+		errmsg := fmt.Sprintf("could not update email&password: %v", errUpdate)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Respond
+	type UpdateUserResp struct {
+		Id    uuid.UUID `json:"id"`
+		Email string    `json:"email"`
+	}
+	updateUserResp := UpdateUserResp{
+		Id:    userID,
+		Email: updateUserReq.Email,
+	}
+	dat, err := json.Marshal(updateUserResp)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not encode response: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(dat))
 
 }
