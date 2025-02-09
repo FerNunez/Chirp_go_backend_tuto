@@ -94,14 +94,12 @@ func (cfg *ApiConfig) MetricsDisplayHandler(rw http.ResponseWriter, _ *http.Requ
 										</html>`, x)
 }
 
-func (cfg *ApiConfig) MetricsResetHandler(rw http.ResponseWriter, _ *http.Request) {
+func (cfg *ApiConfig) ResetHandler(rw http.ResponseWriter, _ *http.Request) {
 	if cfg.Platform != "dev" {
 		rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
 		rw.WriteHeader(403)
+		return
 	}
-
-	rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
-	rw.WriteHeader(200)
 
 	cfg.FileserverHits.Store(0)
 	dbURL := os.Getenv("DB_URL")
@@ -110,6 +108,8 @@ func (cfg *ApiConfig) MetricsResetHandler(rw http.ResponseWriter, _ *http.Reques
 		fmt.Println("error")
 	}
 	cfg.Db = database.New(db)
+	rw.Header().Add("Content-Type", "text/plain;charset=utf-8")
+	rw.WriteHeader(200)
 	rw.Write([]byte("Counter and DB Reseted "))
 
 }
@@ -186,7 +186,7 @@ func (cfg *ApiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 	chirpyResp := ChirpResponse{Id: chirpy.ID, CreatedAt: chirpy.CreatedAt, UpdatedAt: chirpy.UpdatedAt, Body: chirpy.Body, UserId: chirpy.UserID}
 	dat, _ := json.Marshal(chirpyResp)
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusCreated)
 	w.Write(dat)
 
 }
@@ -253,20 +253,20 @@ func (cfg *ApiConfig) GetChirpsByIDHandler(w http.ResponseWriter, r *http.Reques
 	w.Write(dat)
 }
 
-func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
+func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	type LoginReq struct {
-		Password         string `json:"password"`
-		Email            string `json:"email"`
-		ExpiresInSeconds *int   `json:"expires_in_seconds"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	type LoginResp struct {
-		Id        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-		Token     string    `json:"token"`
+		Id           uuid.UUID `json:"id"`
+		CreatedAt    time.Time `json:"created_at"`
+		UpdatedAt    time.Time `json:"updated_at"`
+		Email        string    `json:"email"`
+		Token        string    `json:"token"`
+		RefreshToken string    `json:"refresh_token"`
 	}
 
 	// Unmarshal or Decode
@@ -300,15 +300,8 @@ func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Select Expiration time
-	var expirationInSeconds int
-	if loginReq.ExpiresInSeconds == nil {
-		expirationInSeconds = 3600 // 1hour
-	} else {
-		expirationInSeconds = *loginReq.ExpiresInSeconds
-	}
-
-	jwtToken, err := auth.MakeJWT(dbUser.ID, cfg.SignString, time.Duration(expirationInSeconds)*time.Second)
+	// JWToken creation
+	jwtToken, err := auth.MakeJWT(dbUser.ID, cfg.SignString, time.Duration(3600)*time.Second)
 	if err != nil {
 		errmsg := fmt.Sprintf("Could not make token . Err: %v", err)
 		fmt.Println(errmsg)
@@ -317,10 +310,128 @@ func (cfg *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RefreshToken
+	refreshToken, errRefTok := auth.MakeRefreshToken()
+	if errRefTok != nil {
+		errmsg := fmt.Sprintf("Could not generate refresh token %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+	}
+	createRefreshTokenParams := database.CreateRefreshTokenParams{Token: refreshToken, UserID: dbUser.ID, ExpiresAt: time.Now().UTC().Add(time.Hour * 24 * 60)}
+	cfg.Db.CreateRefreshToken(r.Context(), createRefreshTokenParams)
+
 	// Response
-	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email, Token: jwtToken}
+	loginResp := LoginResp{Id: dbUser.ID, CreatedAt: dbUser.CreatedAt, UpdatedAt: dbUser.UpdatedAt, Email: dbUser.Email, Token: jwtToken, RefreshToken: refreshToken}
 	dat, _ := json.Marshal(loginResp)
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(dat))
+}
+
+func (cfg *ApiConfig) RefreshHandler(w http.ResponseWriter, r *http.Request) {
+
+	// do not accept a body in requet
+	if r.ContentLength > 0 {
+		errmsg := fmt.Sprintln("request not allowed to contain a body")
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Check Authoritzon
+	authToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not retrieve authorization token: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	tokenFromDb, err := cfg.Db.GetRefreshToken(r.Context(), authToken)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not retireve authorization from DB: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	if tokenFromDb.ExpiresAt.UTC().Before(time.Now().UTC()) || (tokenFromDb.RevokedAt.Valid && tokenFromDb.RevokedAt.Time.UTC().Before(time.Now().UTC())) {
+		errmsg := fmt.Sprintln("token expired or revoked")
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Respond: new the jwt token
+	jwtToken, err := auth.MakeJWT(tokenFromDb.UserID, cfg.SignString, time.Hour)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not create new jwtToken: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	type tokenResponse struct {
+		Token string `json:"token"`
+	}
+
+	dat, err := json.Marshal(tokenResponse{Token: jwtToken})
+	if err != nil {
+		errmsg := fmt.Sprintf("could not respond token: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(dat))
+}
+
+func (cfg *ApiConfig) RevokeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength > 0 {
+		errmsg := fmt.Sprintln("request not allowed to contain body")
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Get Refresh token
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not retrieve token in request: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errmsg))
+		return
+	}
+	dbRefreshToken, err := cfg.Db.GetRefreshToken(r.Context(), token)
+	if err != nil {
+		errmsg := fmt.Sprintf("could not find refresh token in db: %v", err)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+
+	// Revoking in DB
+	revokedAt := sql.NullTime{Valid: true, Time: time.Now().UTC()}
+	updateRefreshTokenParams := database.UpdateRefreshTokenParams{RevokedAt: revokedAt, UpdatedAt: time.Now().UTC(), Token: dbRefreshToken.Token}
+	errRevoke := cfg.Db.UpdateRefreshToken(r.Context(), updateRefreshTokenParams)
+	if errRevoke != nil {
+		errmsg := fmt.Sprintf("could not revoke token: %v", errRevoke)
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(errmsg))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+
 }

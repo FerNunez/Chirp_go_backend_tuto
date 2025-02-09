@@ -29,12 +29,14 @@ func main() {
 	serverMux.Handle("assets/logo.png", http.FileServer(http.Dir("assets/logo.png")))
 	serverMux.HandleFunc("GET /admin/metrics", cfg.MetricsDisplayHandler)
 	serverMux.HandleFunc("GET /api/healthz", api.ReadinnesHandler)
-	serverMux.HandleFunc("POST /admin/reset", cfg.MetricsResetHandler)
+	serverMux.HandleFunc("POST /admin/reset", cfg.ResetHandler)
 	serverMux.HandleFunc("POST /api/user", cfg.CreateUser)
 	serverMux.HandleFunc("POST /api/chirps", cfg.CreateChirp)
 	serverMux.HandleFunc("GET /api/chirps", cfg.GetChirpsHandler)
 	serverMux.HandleFunc("GET /api/chirps/{id}", cfg.GetChirpsByIDHandler)
-	serverMux.HandleFunc("POST /api/login", cfg.Login)
+	serverMux.HandleFunc("POST /api/login", cfg.LoginHandler)
+	serverMux.HandleFunc("POST /api/refresh", cfg.RefreshHandler)
+	serverMux.HandleFunc("POST /api/revoke", cfg.RevokeHandler)
 
 	// Listen & Serve
 	server := &http.Server{
