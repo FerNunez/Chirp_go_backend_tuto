@@ -65,3 +65,22 @@ func TestGetBearerToken(t *testing.T) {
 		t.Fatalf("Expected: %v and gotten token: %v are different", expectedToken, token)
 	}
 }
+
+func TestGetAPIKey(t *testing.T) {
+
+	expectedToken := "WhatEver_dude"
+
+	header := http.Header{}
+	expectedString := fmt.Sprintf("ApiKey %v", expectedToken)
+	header.Set("Authorization", expectedString)
+
+	token, err := GetAPIKey(header)
+	if err != nil {
+		t.Fatalf("Error while getting api key token: %v", err)
+		return
+	}
+
+	if token != expectedToken {
+		t.Fatalf("Expected: %v and gotten token: %v are different", expectedToken, token)
+	}
+}

@@ -22,7 +22,7 @@ func main() {
 	}
 	dbQueries := database.New(db)
 
-	cfg := api.ApiConfig{Db: dbQueries, Platform: os.Getenv("PLATFORM"), SignString: os.Getenv("SIGN_STRING")}
+	cfg := api.ApiConfig{Db: dbQueries, Platform: os.Getenv("PLATFORM"), SignString: os.Getenv("SIGN_STRING"), PolkaKey: os.Getenv("POLKA_KEY")}
 
 	serverMux := http.NewServeMux()
 	serverMux.Handle("/", http.StripPrefix("/app/", cfg.MiddlewareMetricsInc(http.FileServer(http.Dir(".")))))

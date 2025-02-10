@@ -19,6 +19,7 @@ type ApiConfig struct {
 	Db             *database.Queries
 	Platform       string
 	SignString     string
+	PolkaKey       string
 }
 
 func (cfg *ApiConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +327,7 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Email        string    `json:"email"`
 		Token        string    `json:"token"`
 		RefreshToken string    `json:"refresh_token"`
-		IsChirpyRed bool      `json:"is_chirpy_red"`
+		IsChirpyRed  bool      `json:"is_chirpy_red"`
 	}
 
 	// Unmarshal or Decode
@@ -582,6 +583,16 @@ func (cfg *ApiConfig) UpdateUserHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (cfg *ApiConfig) UpdateChirpyRedHandler(w http.ResponseWriter, r *http.Request) {
+
+	headerApiKey, errApiKey := auth.GetAPIKey(r.Header)
+
+	if errApiKey != nil || (headerApiKey != cfg.PolkaKey) {
+		errmsg := fmt.Sprintln("header api key authorization error")
+		fmt.Println(errmsg)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(errmsg))
+		return
+	}
 
 	// decode body
 	type PolkaWebhookReq struct {
