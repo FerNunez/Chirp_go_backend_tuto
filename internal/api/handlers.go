@@ -198,12 +198,38 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		UserId    uuid.UUID `json:"user_id"`
 	}
 
-	// Todo: Understand why this needs a DB?
-	chirps, err := cfg.Db.GetChirps(r.Context())
-	if err != nil {
-		fmt.Println("Error retrieving all chirps from DB: ", err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
+	var chirps []database.Chirp
+	authorId := r.URL.Query().Get("author_id")
+	if authorId == "" {
+
+		chirpsAll, err := cfg.Db.GetChirps(r.Context())
+		if err != nil {
+			errmsg := fmt.Sprintf("could not retrieve all chirps from DB: %v ", err)
+			fmt.Println(errmsg)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(errmsg))
+			return
+		}
+		chirps = chirpsAll
+	} else {
+		authorUUID, err := uuid.Parse(authorId)
+		if err != nil {
+			errmsg := fmt.Sprintf("could not retrieve user uuid: %v ", err)
+			fmt.Println(errmsg)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(errmsg))
+			return
+		}
+
+		chirpsUserId, err := cfg.Db.GetChirpsByUserID(r.Context(), authorUUID)
+		if err != nil {
+			errmsg := fmt.Sprintf("could not retrieve user's chirps from DB: %v ", err)
+			fmt.Println(errmsg)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(errmsg))
+			return
+		}
+		chirps = chirpsUserId
 	}
 
 	chirpsResponse := make([]ChirpResponse, len(chirps))
