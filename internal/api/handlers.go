@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+
 	//"strings"
 	"sync/atomic"
 	"time"
@@ -198,6 +200,7 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		UserId    uuid.UUID `json:"user_id"`
 	}
 
+	// Check if author
 	var chirps []database.Chirp
 	authorId := r.URL.Query().Get("author_id")
 	if authorId == "" {
@@ -236,6 +239,19 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	for idx, chirpSql := range chirps {
 		chirpsResponse[idx] = ChirpResponse{Id: chirpSql.ID, CreatedAt: chirpSql.CreatedAt, UpdatedAt: chirpSql.UpdatedAt, Body: chirpSql.Body, UserId: chirpSql.UserID}
 	}
+
+	// Get Sorting
+	switch sortQuery := r.URL.Query().Get("sort"); sortQuery {
+	case "asc":
+		sort.Slice(chirpsResponse, func(i, j int) bool {
+			return chirpsResponse[i].CreatedAt.Before(chirpsResponse[j].CreatedAt)
+		})
+	case "desc":
+		sort.Slice(chirpsResponse, func(i, j int) bool {
+			return chirpsResponse[i].CreatedAt.After(chirpsResponse[j].CreatedAt)
+		})
+	}
+
 	dat, _ := json.Marshal(chirpsResponse)
 	w.WriteHeader(http.StatusOK)
 	w.Write(dat)
